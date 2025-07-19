@@ -1,9 +1,11 @@
 import subprocess
 import time
 import datetime
+import requests
 
 LOG_FILE = "cpu_temp_log.csv"
 INTERVAL = 5  # seconds
+WEBHOOK_URL = "http://localhost:5678/webhook-test/d65403f4-08fb-4256-84b1-ab8e3d057988"
 
 def get_cpu_temp():
     try:
@@ -27,6 +29,15 @@ def get_cpu_temp():
         print(f"Error getting CPU temperature: {e}")
         return None
 
+def send_alert_to_webhook(message):
+    try:
+        payload = {"message": message}
+        response = requests.post(WEBHOOK_URL, json=payload)
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        print(f"Successfully sent alert to webhook: {message}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending alert to webhook: {e}")
+
 def main():
     print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
     with open(LOG_FILE, 'a') as f:
@@ -42,6 +53,9 @@ def main():
                 log_entry = f"{timestamp},{cpu_temp}\n"
                 f.write(log_entry)
                 print(f"Logged: {log_entry.strip()}")
+                if cpu_temp > 60.0:
+                    print("CPU temperature is high!")
+                    send_alert_to_webhook("hight")
             else:
                 print(f"Logged: {timestamp},Could not read temp") # Log if temp couldn't be read
 
