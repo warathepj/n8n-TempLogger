@@ -2,7 +2,7 @@ import subprocess
 import time
 import datetime
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import threading
 import csv # Added import for csv
 
@@ -90,6 +90,15 @@ def receive_message_endpoint():
     except Exception as e:
         print(f"Error receiving message: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/cpu-chart')
+def serve_cpu_chart():
+    try:
+        return send_file('cpu_temp_chart.png', mimetype='image/png')
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "CPU chart image not found."}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Error serving chart: {e}"}), 500
 
 # def log_cpu_temp_periodically():
 #     print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
