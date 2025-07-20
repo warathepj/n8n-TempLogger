@@ -7,8 +7,8 @@ import threading
 import csv # Added import for csv
 
 LOG_FILE = "cpu_temp_log.csv"
-INTERVAL = 500  # seconds
-WEBHOOK_URL = "https://d61a62db74d9.ngrok-free.app/webhook-test/d65403f4-08fb-4256-84b1-ab8e3d057988"
+INTERVAL = 8  # seconds
+WEBHOOK_URL = "https://d61a62db74d9.ngrok-free.app/webhook/d65403f4-08fb-4256-84b1-ab8e3d057988"
 app = Flask(__name__)
 
 def get_cpu_temp():
@@ -79,6 +79,7 @@ def receive_message_endpoint():
                 chart_message = "CPU temperature chart generated and saved as 'cpu_temp_chart.png'."
                 print(chart_message)
                 send_alert_to_webhook({"message": chart_message, "chart_generated": True})
+                send_alert_to_webhook("chart-finish") # Send "chart-finish" message
                 return jsonify({"status": "success", "action": "chart_generated", "message": chart_message}), 200
             except subprocess.CalledProcessError as e:
                 error_message = f"Error executing chart.py: {e}"
@@ -100,29 +101,29 @@ def serve_cpu_chart():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error serving chart: {e}"}), 500
 
-# def log_cpu_temp_periodically():
-#     print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
-#     with open(LOG_FILE, 'a') as f:
-#         # Write header if file is new or empty
-#         if f.tell() == 0:
-#             f.write("Timestamp,CPU_Temp_C\n")
+def log_cpu_temp_periodically():
+    print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
+    with open(LOG_FILE, 'a') as f:
+        # Write header if file is new or empty
+        if f.tell() == 0:
+            f.write("Timestamp,CPU_Temp_C\n")
 
-#         while True:
-#             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#             cpu_temp = get_cpu_temp()
+        while True:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cpu_temp = get_cpu_temp()
 
-#             if cpu_temp is not None:
-#                 log_entry = f"{timestamp},{cpu_temp}\n"
-#                 f.write(log_entry)
-#                 f.flush()  # Ensure data is written to the file immediately
-#                 print(f"Logged: {log_entry.strip()}")
-#                 if cpu_temp > 60.0:
-#                     print("CPU temperature is high!")
-#                     # send_alert_to_webhook("hight")
-#             else:
-#                 print(f"Logged: {timestamp},Could not read temp") # Log if temp couldn't be read
+            if cpu_temp is not None:
+                log_entry = f"{timestamp},{cpu_temp}\n"
+                f.write(log_entry)
+                f.flush()  # Ensure data is written to the file immediately
+                print(f"Logged: {log_entry.strip()}")
+                if cpu_temp > 55.0:
+                    print("CPU temperature is high!")
+                    send_alert_to_webhook("hight")
+            else:
+                print(f"Logged: {timestamp},Could not read temp") # Log if temp couldn't be read
 
-#             time.sleep(INTERVAL)
+            time.sleep(INTERVAL)
 
 def get_last_n_data_points(n=10):
     try:
@@ -169,9 +170,9 @@ def send_last_n_data_points_to_webhook():
 
 if __name__ == "__main__":
     # Start CPU temperature logging in a separate thread
-    # logging_thread = threading.Thread(target=log_cpu_temp_periodically)
-    # logging_thread.daemon = True  # Allow the main program to exit even if this thread is running
-    # logging_thread.start()
+    logging_thread = threading.Thread(target=log_cpu_temp_periodically)
+    logging_thread.daemon = True  # Allow the main program to exit even if this thread is running
+    logging_thread.start()
 
     # Start sending last data point to webhook every 6 seconds in a separate thread
     # send_data_6_sec_thread = threading.Thread(target=send_last_data_periodically_6_sec)
