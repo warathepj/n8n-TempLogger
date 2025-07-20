@@ -8,7 +8,7 @@ import csv # Added import for csv
 
 LOG_FILE = "cpu_temp_log.csv"
 INTERVAL = 500  # seconds
-WEBHOOK_URL = "https://d61a62db74d9.ngrok-free.app/webhook/d65403f4-08fb-4256-84b1-ab8e3d057988"
+WEBHOOK_URL = "https://d61a62db74d9.ngrok-free.app/webhook-test/d65403f4-08fb-4256-84b1-ab8e3d057988"
 app = Flask(__name__)
 
 def get_cpu_temp():
@@ -67,11 +67,11 @@ def receive_message_endpoint():
         print(f"Received message: {received_message}")
         
         if received_message == "/log":
-            last_data = get_last_data_point()
-            print(f"Last data from cpu_temp_log.csv: {last_data}")
+            last_n_data = get_last_n_data_points()
+            print(f"Last 10 data points from cpu_temp_log.csv: {last_n_data}")
             time.sleep(4) # Wait for 4 seconds
-            send_alert_to_webhook(last_data) # Send last_data to webhook
-            return jsonify({"status": "success", "action": "log_data_printed", "data": last_data}), 200
+            send_alert_to_webhook({"data_points": last_n_data}) # Send last_n_data to webhook
+            return jsonify({"status": "success", "action": "log_data_printed", "data": last_n_data}), 200
         
         return jsonify({"status": "success", "action": "message_received", "received_message": received_message}), 200
     except Exception as e:
@@ -102,31 +102,42 @@ def receive_message_endpoint():
 
 #             time.sleep(INTERVAL)
 
-def get_last_data_point():
+def get_last_n_data_points(n=10):
     try:
         with open(LOG_FILE, 'r') as f:
             reader = csv.DictReader(f)
-            last_row = None
-            for row in reader:
-                last_row = row
+            # Read all rows into a list
+            rows = list(reader)
+            
+            # Get the last n rows
+            last_n_rows = rows[-n:] if len(rows) >= n else rows
         
-        if last_row:
-            return {
-                "timestamp": last_row.get("Timestamp"),
-                "cpu_temp_c": float(last_row.get("CPU_Temp_C"))
-            }
+        if last_n_rows:
+            data_points = []
+            for row in last_n_rows:
+                try:
+                    data_points.append({
+                        "timestamp": row.get("Timestamp"),
+                        "cpu_temp_c": float(row.get("CPU_Temp_C"))
+                    })
+                except ValueError:
+                    # Handle cases where CPU_Temp_C might not be a valid float
+                    continue
+            return data_points
         else:
-            return {"message": "No data points found in cpu_temp_log.csv"}
+            return {"message": f"No data points found in {LOG_FILE}"}
+    except FileNotFoundError:
+        return {"message": f"Error: {LOG_FILE} not found."}
     except Exception as e:
-        print(f"Error getting last data point: {e}")
+        print(f"Error getting last {n} data points: {e}")
         return {"message": f"Error: {str(e)}"}
 
-def send_last_data_point_to_webhook():
-    last_data = get_last_data_point()
-    if last_data and "message" not in last_data: # Only send if actual data is found
-        send_alert_to_webhook(last_data)
+def send_last_n_data_points_to_webhook():
+    last_n_data = get_last_n_data_points()
+    if isinstance(last_n_data, list) and last_n_data: # Only send if actual data (list of dicts) is found
+        send_alert_to_webhook({"data_points": last_n_data})
     else:
-        send_alert_to_webhook(last_data) # Send the message if no data or error
+        send_alert_to_webhook(last_n_data) # Send the message if no data or error
 
 # def send_last_data_periodically_6_sec():
 #     print(f"Sending last data point to webhook every 6 seconds.")
