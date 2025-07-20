@@ -4,11 +4,11 @@ import datetime
 import requests
 from flask import Flask, request, jsonify
 import threading
+import csv # Added import for csv
 
 LOG_FILE = "cpu_temp_log.csv"
-INTERVAL = 5  # seconds
-WEBHOOK_URL = "http://localhost:5678/webhook-test/d65403f4-08fb-4256-84b1-ab8e3d057988"
-
+INTERVAL = 500  # seconds
+WEBHOOK_URL = "https://d61a62db74d9.ngrok-free.app/webhook/d65403f4-08fb-4256-84b1-ab8e3d057988"
 app = Flask(__name__)
 
 def get_cpu_temp():
@@ -33,57 +33,117 @@ def get_cpu_temp():
         print(f"Error getting CPU temperature: {e}")
         return None
 
-def send_alert_to_webhook(message):
+def send_alert_to_webhook(payload): # Changed 'message' to 'payload'
     try:
-        payload = {"message": message}
-        response = requests.post(WEBHOOK_URL, json=payload)
-        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
-        print(f"Successfully sent alert to webhook: {message}")
+        # If payload is a string, wrap it in a dictionary for consistency
+        if isinstance(payload, str):
+            payload = {"message": payload}
+        
+        response = requests.post(WEBHOOK_URL, json=payload) # Always send as JSON
+        response.raise_for_status()
+        print(f"Successfully sent alert to webhook: {payload}") # Print the payload sent
+        print(f"Webhook response status: {response.status_code}")
+        print(f"Webhook response text: {response.text}")
     except requests.exceptions.RequestException as e:
         print(f"Error sending alert to webhook: {e}")
+        if e.response is not None:
+            print(f"Webhook error response status: {e.response.status_code}")
+            print(f"Webhook error response text: {e.response.text}")
 
-@app.route('/n8n-webhook', methods=['POST'])
-def n8n_webhook():
-    if request.is_json:
+@app.route('/test-webhook', methods=['POST'])
+def test_webhook_endpoint():
+    test_message = "This is a test message from the dedicated /test-webhook endpoint."
+    send_alert_to_webhook(test_message)
+    return jsonify({"status": "success", "action": "test_message_sent", "message": test_message}), 200
+
+@app.route('/receive-message', methods=['POST'])
+def receive_message_endpoint():
+    try:
         data = request.get_json()
-        message = data.get('message', 'No message provided')
-        print(f"Received message from n8n: {message}")
-        # You can add more logic here based on the received message
-        # For example, trigger an alert or log it
-        send_alert_to_webhook(f"Message from n8n: {message}")
-        return jsonify({"status": "success", "received_message": message}), 200
+        if not data or 'message' not in data:
+            return jsonify({"status": "error", "message": "Invalid request: 'message' field is missing"}), 400
+        
+        received_message = data['message']
+        print(f"Received message: {received_message}")
+        
+        if received_message == "/log":
+            last_data = get_last_data_point()
+            print(f"Last data from cpu_temp_log.csv: {last_data}")
+            time.sleep(4) # Wait for 4 seconds
+            send_alert_to_webhook(last_data) # Send last_data to webhook
+            return jsonify({"status": "success", "action": "log_data_printed", "data": last_data}), 200
+        
+        return jsonify({"status": "success", "action": "message_received", "received_message": received_message}), 200
+    except Exception as e:
+        print(f"Error receiving message: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# def log_cpu_temp_periodically():
+#     print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
+#     with open(LOG_FILE, 'a') as f:
+#         # Write header if file is new or empty
+#         if f.tell() == 0:
+#             f.write("Timestamp,CPU_Temp_C\n")
+
+#         while True:
+#             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#             cpu_temp = get_cpu_temp()
+
+#             if cpu_temp is not None:
+#                 log_entry = f"{timestamp},{cpu_temp}\n"
+#                 f.write(log_entry)
+#                 f.flush()  # Ensure data is written to the file immediately
+#                 print(f"Logged: {log_entry.strip()}")
+#                 if cpu_temp > 60.0:
+#                     print("CPU temperature is high!")
+#                     # send_alert_to_webhook("hight")
+#             else:
+#                 print(f"Logged: {timestamp},Could not read temp") # Log if temp couldn't be read
+
+#             time.sleep(INTERVAL)
+
+def get_last_data_point():
+    try:
+        with open(LOG_FILE, 'r') as f:
+            reader = csv.DictReader(f)
+            last_row = None
+            for row in reader:
+                last_row = row
+        
+        if last_row:
+            return {
+                "timestamp": last_row.get("Timestamp"),
+                "cpu_temp_c": float(last_row.get("CPU_Temp_C"))
+            }
+        else:
+            return {"message": "No data points found in cpu_temp_log.csv"}
+    except Exception as e:
+        print(f"Error getting last data point: {e}")
+        return {"message": f"Error: {str(e)}"}
+
+def send_last_data_point_to_webhook():
+    last_data = get_last_data_point()
+    if last_data and "message" not in last_data: # Only send if actual data is found
+        send_alert_to_webhook(last_data)
     else:
-        return jsonify({"status": "error", "message": "Request must be JSON"}), 400
+        send_alert_to_webhook(last_data) # Send the message if no data or error
 
-def log_cpu_temp_periodically():
-    print(f"Logging CPU temperature every {INTERVAL} seconds. Press Ctrl+C to stop.")
-    with open(LOG_FILE, 'a') as f:
-        # Write header if file is new or empty
-        if f.tell() == 0:
-            f.write("Timestamp,CPU_Temp_C\n")
-
-        while True:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cpu_temp = get_cpu_temp()
-
-            if cpu_temp is not None:
-                log_entry = f"{timestamp},{cpu_temp}\n"
-                f.write(log_entry)
-                f.flush()  # Ensure data is written to the file immediately
-                print(f"Logged: {log_entry.strip()}")
-                if cpu_temp > 60.0:
-                    print("CPU temperature is high!")
-                    send_alert_to_webhook("hight")
-            else:
-                print(f"Logged: {timestamp},Could not read temp") # Log if temp couldn't be read
-
-            time.sleep(INTERVAL)
+# def send_last_data_periodically_6_sec():
+#     print(f"Sending last data point to webhook every 6 seconds.")
+#     while True:
+#         send_last_data_point_to_webhook()
+#         time.sleep(6) # Send every 6 seconds
 
 if __name__ == "__main__":
     # Start CPU temperature logging in a separate thread
-    logging_thread = threading.Thread(target=log_cpu_temp_periodically)
-    logging_thread.daemon = True  # Allow the main program to exit even if this thread is running
-    logging_thread.start()
+    # logging_thread = threading.Thread(target=log_cpu_temp_periodically)
+    # logging_thread.daemon = True  # Allow the main program to exit even if this thread is running
+    # logging_thread.start()
+
+    # Start sending last data point to webhook every 6 seconds in a separate thread
+    # send_data_6_sec_thread = threading.Thread(target=send_last_data_periodically_6_sec)
+    # send_data_6_sec_thread.daemon = True
+    # send_data_6_sec_thread.start()
 
     # Run the Flask app
     try:
