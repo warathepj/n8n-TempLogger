@@ -69,6 +69,7 @@ def log_cpu_temp_periodically():
             if cpu_temp is not None:
                 log_entry = f"{timestamp},{cpu_temp}\n"
                 f.write(log_entry)
+                f.flush()  # Ensure data is written to the file immediately
                 print(f"Logged: {log_entry.strip()}")
                 if cpu_temp > 60.0:
                     print("CPU temperature is high!")
