@@ -72,6 +72,19 @@ def receive_message_endpoint():
             time.sleep(4) # Wait for 4 seconds
             send_alert_to_webhook({"data_points": last_n_data}) # Send last_n_data to webhook
             return jsonify({"status": "success", "action": "log_data_printed", "data": last_n_data}), 200
+        elif received_message == "/chart":
+            print("Executing chart.py to generate CPU temperature chart...")
+            try:
+                subprocess.run(['python3', 'chart.py'], check=True)
+                chart_message = "CPU temperature chart generated and saved as 'cpu_temp_chart.png'."
+                print(chart_message)
+                send_alert_to_webhook({"message": chart_message, "chart_generated": True})
+                return jsonify({"status": "success", "action": "chart_generated", "message": chart_message}), 200
+            except subprocess.CalledProcessError as e:
+                error_message = f"Error executing chart.py: {e}"
+                print(error_message)
+                send_alert_to_webhook({"message": error_message, "chart_generated": False, "error": str(e)})
+                return jsonify({"status": "error", "action": "chart_generation_failed", "message": error_message}), 500
         
         return jsonify({"status": "success", "action": "message_received", "received_message": received_message}), 200
     except Exception as e:
